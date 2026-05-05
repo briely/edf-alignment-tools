@@ -8,7 +8,7 @@ This toolkit provides three main utilities:
 
 1. **edf_viewer.py** - Visualize EDF files and compare multiple recordings
 2. **estimate_lag.py** - Estimate time lag between two EDF files using cross-correlation
-3. **apply_lag_correction.py** - Apply time lag corrections to EDF files
+3. **set_start_time.py** - Set or adjust the start time of EDF files
 
 These tools are particularly useful when working with simultaneous recordings from multiple devices that may have clock drift or synchronization offsets.
 
@@ -118,31 +118,40 @@ Estimated lag: -15.234 s
 - `--quiet` - Output only the lag value (for scripting)
 - `--output FILE.json` - Save results to JSON
 
-### 3. Apply Lag Correction
+### 3. Set Start Time
 
-Apply a time offset correction to an EDF file by adjusting the start time and trimming samples.
+Set or adjust the start time of an EDF file. This tool supports two modes:
+1. Set an absolute start time
+2. Adjust the start time by a lag offset (typically from estimate_lag.py)
 
 **Basic usage:**
 
 ```bash
-# Apply correction (typically from estimate_lag.py output)
-python apply_lag_correction.py input.edf -15.234 -o corrected.edf
+# Set absolute start time
+python set_start_time.py input.edf --set-time "2024-03-15 14:30:45" -o output.edf
+
+# Adjust by lag offset (typically from estimate_lag.py output)
+python set_start_time.py input.edf --adjust-by -15.234 -o corrected.edf
 
 # Verbose output showing details
-python apply_lag_correction.py input.edf -15.234 -o corrected.edf --verbose
+python set_start_time.py input.edf --adjust-by -15.234 -o corrected.edf --verbose
 ```
 
 **How it works:**
 
-1. Adjusts the EDF start time metadata by the specified lag
+1. Adjusts the EDF start time metadata (either to absolute time or by offset)
 2. Trims signal samples to align with whole-second boundaries (EDF limitation)
 3. Adjusts annotations to maintain correct absolute timing
 
 **Note:** EDF format only supports 1-second resolution for start times. Fractional seconds are handled by trimming the appropriate number of samples from the beginning of each signal.
 
 **Options:**
+- `--set-time DATETIME` - Set to absolute datetime (format: "YYYY-MM-DD HH:MM:SS" or with microseconds)
+- `--adjust-by SECONDS` - Adjust by lag in seconds (negative=shift backward, positive=shift forward)
 - `-o, --output FILE` - Output file path (required)
 - `-v, --verbose` - Show detailed processing information
+
+**Note:** The `--set-time` and `--adjust-by` options are mutually exclusive - use one or the other.
 
 ## Typical Workflow
 
@@ -158,7 +167,7 @@ python estimate_lag.py device1.edf device2.edf --channel F7 --plot
 python edf_viewer.py device1.edf device2.edf --shift -15.234 --duration 60
 
 # Step 3: Apply correction to create aligned file
-python apply_lag_correction.py device2.edf -15.234 -o device2_aligned.edf
+python set_start_time.py device2.edf --adjust-by -15.234 -o device2_aligned.edf
 
 # Step 4: Verify the corrected alignment
 python edf_viewer.py device1.edf device2_aligned.edf --duration 60

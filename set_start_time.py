@@ -1,41 +1,41 @@
 #!/usr/bin/env python3
 """
-Apply time lag correction to an EDF file.
+Set or adjust the start time of an EDF file.
 
-This script adjusts the start_time metadata and trims signal data to align
-with whole-second boundaries (EDF limitation). Used after estimate_lag.py
-to create time-aligned EDF files.
+This script can either:
+1. Set the start time to an absolute datetime
+2. Adjust the start time by a lag offset (e.g., from estimate_lag.py)
 
-Example:
-    # Find lag between two files
-    python estimate_lag.py file1.edf file2.edf --channel F7 --quiet
-    # Output: -15.234
+In both cases, the script adjusts start_time metadata and trims signal data to align
+with whole-second boundaries (EDF limitation).
 
-    # Apply correction to file2
-    python apply_lag_correction.py file2.edf -15.234 -o file2_corrected.edf
+Examples:
+    # Set absolute start time
+    python set_start_time.py input.edf --set-time "2024-03-15 14:30:45" -o output.edf
+
+    # Adjust by lag offset (from estimate_lag.py)
+    python set_start_time.py input.edf --adjust-by -15.234 -o output.edf
 """
 
 import argparse
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 import numpy as np
 import pyedflib
 
 
-def apply_lag_correction(input_path, lag_seconds, output_path, verbose=False):
+def set_start_time(input_path, new_start_time, output_path, verbose=False):
     """
-    Apply lag correction to an EDF file.
+    Set the start time of an EDF file to an absolute datetime.
 
     Parameters
     ----------
     input_path : str
         Path to input EDF file
-    lag_seconds : float
-        Lag correction in seconds (from estimate_lag.py)
-        Negative: file is ahead, shift backward
-        Positive: file is behind, shift forward
+    new_start_time : datetime
+        New start time to set
     output_path : str
-        Path to output corrected EDF file
+        Path to output EDF file
     verbose : bool
         Print detailed information
     """
@@ -74,32 +74,30 @@ def apply_lag_correction(input_path, lag_seconds, output_path, verbose=False):
             headers.append(header)
 
         # Read annotations
-        # readAnnotations() returns (onsets, durations, labels) as three separate lists
         annotation_onsets, annotation_durations, annotation_labels = f_in.readAnnotations()
         annotations = list(zip(annotation_onsets, annotation_durations, annotation_labels))
 
     finally:
         f_in.close()
 
-    # Calculate new start time
-    new_start_time_exact = old_start_time + timedelta(seconds=lag_seconds)
+    # Calculate the effective lag
+    lag_seconds = (new_start_time - old_start_time).total_seconds()
 
     # Extract fractional seconds (EDF only supports 1-second resolution)
-    fractional_seconds = new_start_time_exact.microsecond / 1e6
+    fractional_seconds = new_start_time.microsecond / 1e6
 
     # Truncate to whole seconds for EDF header
-    new_start_time_edf = new_start_time_exact.replace(microsecond=0)
+    new_start_time_edf = new_start_time.replace(microsecond=0)
 
     if verbose:
         print(f"\nTime adjustment:")
         print(f"  Original start time: {old_start_time}")
-        print(f"  Lag correction: {lag_seconds:+.3f} s")
-        print(f"  New start time (exact): {new_start_time_exact}")
+        print(f"  New start time (exact): {new_start_time}")
         print(f"  New start time (EDF): {new_start_time_edf}")
+        print(f"  Effective adjustment: {lag_seconds:+.3f} s")
         print(f"  Fractional seconds: {fractional_seconds:.6f} s")
 
     # Trim signals to align with whole-second boundary
-    # EDF can only represent integer seconds, so we skip forward by the fractional part
     trimmed_signals = []
     max_trim = 0
 
@@ -121,7 +119,6 @@ def apply_lag_correction(input_path, lag_seconds, output_path, verbose=False):
             print(f"  Channel {headers[i]['label']}: trimmed {samples_to_trim} samples ({samples_to_trim/fs:.6f} s)")
 
     # Adjust annotations
-    # Annotations are referenced to start_time, so we recalculate based on absolute times
     adjusted_annotations = []
 
     for onset, duration, label in annotations:
@@ -174,48 +171,112 @@ def apply_lag_correction(input_path, lag_seconds, output_path, verbose=False):
     if verbose:
         print(f"\nSuccess! Corrected file saved to {output_path}")
         print(f"Total samples trimmed: {max_trim}")
-        print(f"Correction error: {abs(samples_to_trim/fs - fractional_seconds):.6f} s (due to integer sample trimming)")
+        if max_trim > 0:
+            print(f"Trimming error: {abs(samples_to_trim/fs - fractional_seconds):.6f} s (due to integer sample trimming)")
+
+
+def adjust_start_time(input_path, lag_seconds, output_path, verbose=False):
+    """
+    Adjust the start time of an EDF file by a lag offset.
+
+    Parameters
+    ----------
+    input_path : str
+        Path to input EDF file
+    lag_seconds : float
+        Lag correction in seconds (from estimate_lag.py)
+        Negative: file is ahead, shift backward
+        Positive: file is behind, shift forward
+    output_path : str
+        Path to output corrected EDF file
+    verbose : bool
+        Print detailed information
+    """
+    if verbose:
+        print(f"Loading {input_path}...")
+
+    # Load input EDF to get current start time
+    f_in = pyedflib.EdfReader(input_path)
+    try:
+        old_start_time = f_in.getStartdatetime()
+    finally:
+        f_in.close()
+
+    # Calculate new start time
+    new_start_time = old_start_time + timedelta(seconds=lag_seconds)
+
+    # Use the set_start_time function
+    set_start_time(input_path, new_start_time, output_path, verbose)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Apply time lag correction to an EDF file',
+        description='Set or adjust the start time of an EDF file',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Find lag using estimate_lag.py, then apply correction
+  # Set absolute start time
+  python set_start_time.py input.edf --set-time "2024-03-15 14:30:45" -o output.edf
+
+  # Set start time with microsecond precision
+  python set_start_time.py input.edf --set-time "2024-03-15 14:30:45.123456" -o output.edf
+
+  # Adjust by lag offset (from estimate_lag.py)
   LAG=$(python estimate_lag.py file1.edf file2.edf --channel F7 --quiet)
-  python apply_lag_correction.py file2.edf $LAG -o file2_corrected.edf
+  python set_start_time.py file2.edf --adjust-by $LAG -o file2_corrected.edf
 
   # Apply negative lag (file is ahead, shift backward)
-  python apply_lag_correction.py recording.edf -15.234 -o recording_corrected.edf
+  python set_start_time.py recording.edf --adjust-by -15.234 -o recording_corrected.edf
 
   # Apply positive lag (file is behind, shift forward)
-  python apply_lag_correction.py recording.edf 8.567 -o recording_corrected.edf
+  python set_start_time.py recording.edf --adjust-by 8.567 -o recording_corrected.edf
 
   # Verbose output
-  python apply_lag_correction.py input.edf -15.234 -o output.edf --verbose
+  python set_start_time.py input.edf --adjust-by -15.234 -o output.edf --verbose
 
 Notes:
   - EDF format only supports 1-second resolution for start_time
   - Fractional seconds are handled by trimming signal samples
   - Annotations are adjusted to maintain absolute timing
-  - Lag value typically comes from estimate_lag.py output
+  - Must use either --set-time OR --adjust-by (mutually exclusive)
         """
     )
 
     parser.add_argument('input', help='Input EDF file')
-    parser.add_argument('lag', type=float,
-                       help='Lag correction in seconds (negative=shift backward, positive=shift forward)')
+
+    # Mutually exclusive group for setting vs adjusting time
+    time_group = parser.add_mutually_exclusive_group(required=True)
+    time_group.add_argument('--set-time', type=str, metavar='DATETIME',
+                           help='Set start time to absolute datetime (format: "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD HH:MM:SS.ffffff")')
+    time_group.add_argument('--adjust-by', type=float, metavar='SECONDS',
+                           help='Adjust start time by lag in seconds (negative=shift backward, positive=shift forward)')
+
     parser.add_argument('-o', '--output', required=True,
-                       help='Output corrected EDF file')
+                       help='Output EDF file')
     parser.add_argument('-v', '--verbose', action='store_true',
                        help='Show detailed processing information')
 
     args = parser.parse_args()
 
     try:
-        apply_lag_correction(args.input, args.lag, args.output, args.verbose)
+        if args.set_time:
+            # Parse the datetime string
+            # Try with microseconds first, then without
+            try:
+                new_start_time = datetime.strptime(args.set_time, "%Y-%m-%d %H:%M:%S.%f")
+            except ValueError:
+                try:
+                    new_start_time = datetime.strptime(args.set_time, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    print(f"Error: Invalid datetime format. Use 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD HH:MM:SS.ffffff'",
+                          file=sys.stderr)
+                    sys.exit(1)
+
+            set_start_time(args.input, new_start_time, args.output, args.verbose)
+
+        elif args.adjust_by is not None:
+            adjust_start_time(args.input, args.adjust_by, args.output, args.verbose)
+
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         import traceback

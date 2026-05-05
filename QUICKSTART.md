@@ -36,7 +36,7 @@ python edf_viewer.py recording1.edf recording2.edf --shift -15.234 --duration 60
 
 ```bash
 # Apply the estimated lag to create aligned file
-python apply_lag_correction.py recording2.edf -15.234 -o recording2_aligned.edf --verbose
+python set_start_time.py recording2.edf --adjust-by -15.234 -o recording2_aligned.edf --verbose
 
 # Verify the correction
 python edf_viewer.py recording1.edf recording2_aligned.edf --duration 60
@@ -56,7 +56,9 @@ python edf_viewer.py recording1.edf recording2_aligned.edf --duration 60
 - `--stability-plot` - Analyze drift over time
 - `--quiet` - Output only the lag value
 
-**apply_lag_correction.py**
+**set_start_time.py**
+- `--adjust-by SECONDS` - Adjust by lag offset
+- `--set-time DATETIME` - Set absolute start time
 - `-o output.edf` - Output file (required)
 - `--verbose` - Show details
 
@@ -71,8 +73,8 @@ python edf_viewer.py recording1.edf recording2_aligned.edf --duration 60
 - Check timestamps with `--info` mode
 
 **Low correlation warning**
-- Try preprocessing: `--zero-phase-filter1 --zero-phase-filter2`
-- Try different channel or filter settings
+- Ensure data is properly pre-filtered (e.g., bandpass 0.5-35 Hz for EEG)
+- Try different channels
 
 ## Need Help?
 
