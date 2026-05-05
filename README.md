@@ -227,11 +227,3 @@ The `estimate_lag.py` tool uses cross-correlation to find the time offset betwee
 ## License
 
 This project is provided as-is for research and educational purposes.
-
-## Contributing
-
-Contributions, bug reports, and feature requests are welcome!
-
-## Citation
-
-If you use these tools in research, please cite appropriately and mention the source repository.
